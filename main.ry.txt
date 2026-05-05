@@ -1,93 +1,82 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
-import random
-import string
+from tkinter import messagebox
+import requests
 import json
 import os
 
-# Файл для хранения истории
-HISTORY_FILE = "password_history.json"
+class GitHubUserFinder:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("GitHub User Finder")
+        
+        # Список избранных пользователей
+        self.favorite_users = []
+        self.load_favorites()
 
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        with open(HISTORY_FILE, "r") as f:
-            return json.load(f)
-    return []
+        # Поле для ввода
+        self.search_entry = tk.Entry(root, width=50)
+        self.search_entry.pack(pady=10)
 
-def save_history(history):
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(history, f)
+        # Кнопка поиска
+        self.search_button = tk.Button(root, text="Поиск", command=self.search_user)
+        self.search_button.pack()
 
-def generate_password():
-    length = int(length_slider.get())
-    use_digits = digits_var.get()
-    use_letters = letters_var.get()
-    use_special = special_var.get()
+        # Список результатов
+        self.results_listbox = tk.Listbox(root, width=50)
+        self.results_listbox.pack(pady=10)
+        self.results_listbox.bind('<Double-1>', self.add_to_favorites)
 
-    if not (use_digits or use_letters or use_special):
-        messagebox.showwarning("Ошибка", "Выберите хотя бы один тип символов!")
-        return
+        # Кнопка для отображения избранных пользователей
+        self.show_favorites_button = tk.Button(root, text="Показать избранные", command=self.show_favorites)
+        self.show_favorites_button.pack(pady=10)
 
-    chars = ""
-    if use_letters:
-        chars += string.ascii_letters
-    if use_digits:
-        chars += string.digits
-    if use_special:
-        chars += string.punctuation
+    def search_user(self):
+        username = self.search_entry.get().strip()
+        if not username:
+            messagebox.showerror("Ошибка", "Поле поиска не должно быть пустым.")
+            return
+        
+        url = f"https://api.github.com/users/{username}"
+        response = requests.get(url)
 
-    password = ''.join(random.choices(chars, k=length))
-    password_entry.delete(0, tk.END)
-    password_entry.insert(0, password)
+        if response.status_code == 200:
+            user_data = response.json()
+            self.results_listbox.delete(0, tk.END)
+            self.results_listbox.insert(tk.END, f"{user_data['login']} (ID: {user_data['id']})")
+        else:
+            messagebox.showerror("Ошибка", "Пользователь не найден.")
 
-    # Добавляем в историю
-    history = load_history()
-    history.append(password)
-    save_history(history)
-    update_history_table()
+    def add_to_favorites(self, event):
+        selected = self.results_listbox.curselection()
+        if selected:
+            user_info = self.results_listbox.get(selected)
+            if user_info not in self.favorite_users:
+                self.favorite_users.append(user_info)
+                self.save_favorites()
+                messagebox.showinfo("Успех", "Пользователь добавлен в избранное.")
+            else:
+                messagebox.showinfo("Информация", "Пользователь уже в избранном.")
 
-def update_history_table():
-    for i in history_tree.get_children():
-        history_tree.delete(i)
-    for pwd in load_history():
-        history_tree.insert("", "end", values=(pwd,))
+    def load_favorites(self):
+        if os.path.exists("favorites.json"):
+            with open("favorites.json", "r") as file:
+                self.favorite_users = json.load(file)
 
-# --- GUI ---
-root = tk.Tk()
-root.title("Random Password Generator")
-root.geometry("500x400")
+    def save_favorites(self):
+        with open("favorites.json", "w") as file:
+            json.dump(self.favorite_users, file)
 
-# Длина пароля
-tk.Label(root, text="Длина пароля:").pack(pady=5)
-length_slider = tk.Scale(root, from_=4, to=32, orient=tk.HORIZONTAL, length=300)
-length_slider.set(12)
-length_slider.pack()
+    def show_favorites(self):
+        favorites_window = tk.Toplevel(self.root)
+        favorites_window.title("Избранные пользователи")
+        favorites_listbox = tk.Listbox(favorites_window, width=50)
+        favorites_listbox.pack(pady=10)
 
-# Чекбоксы
-options_frame = tk.Frame(root)
-options_frame.pack(pady=10)
+        for user in self.favorite_users:
+            favorites_listbox.insert(tk.END, user)
 
-digits_var = tk.BooleanVar(value=True)
-letters_var = tk.BooleanVar(value=True)
-special_var = tk.BooleanVar(value=True)
 
-tk.Checkbutton(options_frame, text="Цифры", variable=digits_var).grid(row=0, column=0, padx=5)
-tk.Checkbutton(options_frame, text="Буквы", variable=letters_var).grid(row=0, column=1, padx=5)
-tk.Checkbutton(options_frame, text="Спецсимволы", variable=special_var).grid(row=0, column=2, padx=5)
-
-# Кнопка генерации и поле вывода
-tk.Button(root, text="Сгенерировать", command=generate_password).pack(pady=5)
-password_entry = tk.Entry(root, width=40)
-password_entry.pack(pady=5)
-
-# История паролей
-history_label = tk.Label(root, text="История паролей:")
-history_label.pack()
-history_tree = ttk.Treeview(root, columns=("password",), show="headings")
-history_tree.heading("password", text="Пароль")
-history_tree.column("password", width=450)
-history_tree.pack(fill=tk.BOTH, expand=True)
-
-update_history_table()
-
-root.mainloop()
+if __name__ == "__main__":
+    root = tk.Tk()
+    github_user_finder = GitHubUserFinder(root)
+    root.mainloop()
